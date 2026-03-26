@@ -139,13 +139,7 @@ function parsePrintArgs(argStr) {
   argStr = argStr.trim();
   if (!argStr) return [];
 
-  // Check for operators outside string literals
-  var noStrings = argStr.replace(/'[^']*'|"[^"]*"/g, '');
-  if (/[+\-*\/%<>=!()]/.test(noStrings) || /\b(and|or|not)\b/.test(noStrings)) {
-    return [argStr]; // single expression
-  }
-
-  // No operators → split into separate arguments (respecting quotes)
+  // Tokenize by whitespace, respecting quoted strings
   var tokens = [];
   var i = 0;
   while (i < argStr.length) {
@@ -162,6 +156,15 @@ function parsePrintArgs(argStr) {
       i = j;
     }
   }
+
+  // If any token IS a standalone operator, treat entire string as one expression
+  var ops = ['+', '-', '*', '/', '%', '<', '>', '==', '!=', '<=', '>=', '(', ')', 'and', 'or', 'not'];
+  var hasStandaloneOp = tokens.some(function(t) { return ops.indexOf(t) >= 0; });
+  if (hasStandaloneOp) {
+    return [argStr]; // single expression (e.g. "x % 2 == 0", "1 < 2")
+  }
+
+  // Otherwise each token is a separate argument (e.g. "'hello' i j", "1+1 2+2")
   return tokens;
 }
 

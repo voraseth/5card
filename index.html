@@ -351,14 +351,10 @@ function executeCell(code5c) {
   var jsCode = toJS(code5c);
   __output = [];
   try {
-    // Add loop safety counter
+    // Add loop safety counter (only targets for-loops, not if/else)
     var safeCode = jsCode.replace(
-      /for\s*\(/g,
-      'var __lc=0; for ('
-    );
-    safeCode = safeCode.replace(
-      /\)\s*\{/g,
-      ') { if(++__lc>1000000)throw new Error("Loop limit exceeded (1,000,000 iterations)");'
+      /for\s*\(([^)]+)\)\s*\{/g,
+      'var __lc=0; for ($1) { if(++__lc>1000000)throw new Error("Loop limit exceeded (1,000,000 iterations)");'
     );
     eval(safeCode);
     return { output: __output.join('\n'), error: null };

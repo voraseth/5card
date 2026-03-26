@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5C IDE — Programming with 5 Cards</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f7f7f7; color: #333; }
+
+.header {
+  background: #fff; border-bottom: 2px solid #4a90d9; padding: 14px 24px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.header h1 { font-size: 22px; font-weight: 700; color: #2c3e50; }
+.header h1 span { color: #4a90d9; }
+.header .subtitle { color: #777; font-size: 13px; }
+
+.toolbar {
+  background: #fff; border-bottom: 1px solid #ddd; padding: 8px 24px;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.toolbar button {
+  padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px;
+  background: #fff; cursor: pointer; font-size: 13px; transition: all 0.15s;
+}
+.toolbar button:hover { background: #f0f0f0; }
+.toolbar .btn-run { background: #4a90d9; color: #fff; border-color: #4a90d9; }
+.toolbar .btn-run:hover { background: #357abd; }
+.toolbar .btn-clear { color: #888; }
+.toolbar .sep { width: 1px; height: 24px; background: #ddd; margin: 0 4px; }
+
+#cells { max-width: 960px; margin: 20px auto; padding: 0 16px; }
+
+.cell {
+  background: #fff; border: 2px solid #e0e0e0; border-radius: 6px;
+  margin-bottom: 14px; overflow: hidden; transition: border-color 0.15s;
+}
+.cell:focus-within { border-color: #4a90d9; }
+
+.cell-bar {
+  display: flex; align-items: center; padding: 3px 8px;
+  background: #fafafa; border-bottom: 1px solid #eee; gap: 2px;
+}
+.cell-bar .cell-num {
+  font-size: 11px; color: #aaa; font-family: monospace; min-width: 40px;
+}
+.cell-bar button {
+  padding: 2px 8px; border: none; background: transparent;
+  cursor: pointer; font-size: 15px; color: #888; border-radius: 3px;
+}
+.cell-bar button:hover { background: #e8e8e8; color: #333; }
+.cell-bar .btn-run-cell { color: #4a90d9; font-size: 18px; }
+.cell-bar .btn-run-cell:hover { background: #e3f0ff; }
+.cell-bar .spacer { flex: 1; }
+
+.cell-input textarea {
+  width: 100%; border: none; padding: 10px 14px;
+  font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+  font-size: 14px; line-height: 1.6; resize: vertical; min-height: 44px;
+  outline: none; background: #fdfdfd; tab-size: 2; color: #2c3e50;
+}
+
+.cell-output {
+  padding: 8px 14px; font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+  border-top: 1px solid #eee; background: #fff; color: #2c3e50;
+}
+.cell-output:empty { display: none; }
+.cell-output.error { color: #c0392b; background: #fdf0ef; }
+
+.cell-python {
+  padding: 8px 14px; font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+  border-top: 1px dashed #cce0ff; background: #f0f7ff; color: #1a5276;
+  display: none;
+}
+.cell-python.visible { display: block; }
+.cell-python .py-label {
+  font-size: 10px; color: #999; font-family: sans-serif;
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+}
+
+.add-cell-area { text-align: center; padding: 10px 0 40px; max-width: 960px; margin: 0 auto; }
+.add-cell-btn {
+  padding: 8px 28px; border: 2px dashed #ccc; border-radius: 6px;
+  background: transparent; cursor: pointer; color: #999; font-size: 14px;
+}
+.add-cell-btn:hover { border-color: #4a90d9; color: #4a90d9; }
+
+@media (max-width: 600px) {
+  .header { padding: 10px 12px; }
+  #cells { padding: 0 6px; }
+  .cell-input textarea { font-size: 13px; padding: 8px 10px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>5C</span> IDE</h1>
+  <span class="subtitle">เขียนโปรแกรมด้วยการ์ด ๕ ใบ — Programming with 5 Cards</span>
+</div>
+
+<div class="toolbar">
+  <button class="btn-run" onclick="runAll()" title="Run All Cells">&#9654; Run All</button>
+  <button onclick="addCell()" title="Add Cell">+ Cell</button>
+  <div class="sep"></div>
+  <button onclick="toggleAllPython()" title="Toggle Python view">&#x1f40d; Python</button>
+  <button class="btn-clear" onclick="clearOutputs()" title="Clear all outputs">Clear</button>
+</div>
+
+<div id="cells"></div>
+
+<div class="add-cell-area">
+  <button class="add-cell-btn" onclick="addCell()">+ Add Cell</button>
+</div>
+
+<script>
+// ============================
+//  5C Language Transpiler
+// ============================
+
+function preprocess(code) {
+  return code
+    .replace(/= =/g, '==')
+    .replace(/! =/g, '!=')
+    .replace(/< =/g, '<=')
+    .replace(/> =/g, '>=');
+}
+
+function getIndent(line) {
+  var m = line.match(/^(\s*)/);
+  return m ? m[1].length : 0;
+}
+
+// Tokenize print arguments and decide: one expression or multiple args
+function parsePrintArgs(argStr) {
+  argStr = argStr.trim();
+  if (!argStr) return [];
+
+  // Check for operators outside string literals
+  var noStrings = argStr.replace(/'[^']*'|"[^"]*"/g, '');
+  if (/[+\-*\/%<>=!()]/.test(noStrings) || /\b(and|or|not)\b/.test(noStrings)) {
+    return [argStr]; // single expression
+  }
+
+  // No operators → split into separate arguments (respecting quotes)
+  var tokens = [];
+  var i = 0;
+  while (i < argStr.length) {
+    if (argStr[i] === ' ') { i++; continue; }
+    if (argStr[i] === "'" || argStr[i] === '"') {
+      var q = argStr[i], j = i + 1;
+      while (j < argStr.length && argStr[j] !== q) j++;
+      tokens.push(argStr.substring(i, j + 1));
+      i = j + 1;
+    } else {
+      var j = i;
+      while (j < argStr.length && argStr[j] !== ' ') j++;
+      tokens.push(argStr.substring(i, j));
+      i = j;
+    }
+  }
+  return tokens;
+}
+
+// Translate expression for JS: and/or/not/True/False
+function exprToJS(expr) {
+  return expr
+    .replace(/\band\b/g, '&&')
+    .replace(/\bor\b/g, '||')
+    .replace(/\bnot\s+/g, '!')
+    .replace(/\bTrue\b/g, 'true')
+    .replace(/\bFalse\b/g, 'false');
+}
+
+// Parse loop line: "loop VAR COUNT" or "loop VAR COUNT if COND"
+function parseLoop(trimmed) {
+  var m = trimmed.match(/^loop\s+(\w+)\s+(.+)$/);
+  if (!m) return null;
+  var varName = m[1], rest = m[2];
+  var ifIdx = rest.search(/\s+if\s+/);
+  if (ifIdx >= 0) {
+    return { varName: varName, count: rest.substring(0, ifIdx), cond: rest.substring(ifIdx).replace(/^\s+if\s+/, '') };
+  }
+  return { varName: varName, count: rest, cond: null };
+}
+
+// ============================
+//  5C → Python
+// ============================
+function toPython(code5c) {
+  var lines = preprocess(code5c).split('\n');
+  var out = [];
+  for (var li = 0; li < lines.length; li++) {
+    var line = lines[li];
+    var indent = getIndent(line);
+    var trimmed = line.trim();
+    var pad = ' '.repeat(indent);
+
+    if (!trimmed || trimmed.startsWith('#')) { out.push(line); continue; }
+
+    if (trimmed === 'print' || trimmed.startsWith('print ')) {
+      var args = trimmed === 'print' ? '' : trimmed.slice(6);
+      var parsed = parsePrintArgs(args);
+      out.push(pad + 'print(' + parsed.join(', ') + ')');
+    }
+    else if (trimmed.startsWith('loop ')) {
+      var lp = parseLoop(trimmed);
+      if (lp) {
+        out.push(pad + 'for ' + lp.varName + ' in range(' + lp.count + '):');
+        if (lp.cond) {
+          out.push(pad + '  if ' + lp.cond + ':');
+        }
+      }
+    }
+    else if (trimmed.startsWith('else if ')) {
+      out.push(pad + 'elif ' + trimmed.slice(8) + ':');
+    }
+    else if (trimmed === 'else') {
+      out.push(pad + 'else:');
+    }
+    else if (trimmed.startsWith('if ')) {
+      out.push(pad + trimmed + ':');
+    }
+    else {
+      out.push(line);
+    }
+  }
+  return out.join('\n');
+}
+
+// ============================
+//  5C → JavaScript
+// ============================
+function toJS(code5c) {
+  var lines = preprocess(code5c).split('\n');
+  var jsLines = [];
+  var blockStack = []; // indent levels of block-opening lines
+  var declaredVars = {};
+
+  // First pass: find variable names for declaration
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i].trim();
+    var am = t.match(/^(\w+)\s*=[^=]/);
+    if (am && !['if','else','loop','print'].includes(am[1])) {
+      declaredVars[am[1]] = true;
+    }
+    var lm = t.match(/^loop\s+(\w+)/);
+    if (lm) declaredVars[lm[1]] = true;
+  }
+
+  var varNames = Object.keys(declaredVars);
+  if (varNames.length > 0) {
+    jsLines.push('var ' + varNames.join(', ') + ';');
+  }
+
+  for (var li = 0; li < lines.length; li++) {
+    var line = lines[li];
+    var indent = getIndent(line);
+    var trimmed = line.trim();
+    var pad = ' '.repeat(indent);
+
+    if (!trimmed) continue;
+    if (trimmed.startsWith('#')) {
+      jsLines.push(pad + '//' + trimmed.slice(1));
+      continue;
+    }
+
+    // Close blocks whose indent >= current indent
+    // But for else/else if, merge with closing brace
+    var isElse = trimmed === 'else' || trimmed.startsWith('else if ');
+
+    if (isElse && blockStack.length > 0 && blockStack[blockStack.length - 1] >= indent) {
+      // Close one block and merge brace with else
+      var lvl = blockStack.pop();
+      var prefix = ' '.repeat(lvl) + '} ';
+      // Close any additional blocks
+      while (blockStack.length > 0 && blockStack[blockStack.length - 1] >= indent) {
+        jsLines.push(' '.repeat(blockStack.pop()) + '}');
+      }
+      // Emit else line
+      if (trimmed.startsWith('else if ')) {
+        var cond = exprToJS(trimmed.slice(8));
+        jsLines.push(prefix + 'else if (' + cond + ') {');
+      } else {
+        jsLines.push(prefix + 'else {');
+      }
+      blockStack.push(indent);
+    } else {
+      // Normal block closing
+      while (blockStack.length > 0 && blockStack[blockStack.length - 1] >= indent) {
+        jsLines.push(' '.repeat(blockStack.pop()) + '}');
+      }
+
+      // Translate line
+      if (trimmed === 'print' || trimmed.startsWith('print ')) {
+        var args = trimmed === 'print' ? '' : trimmed.slice(6);
+        var parsed = parsePrintArgs(args);
+        var jsArgs = parsed.map(exprToJS).join(', ');
+        jsLines.push(pad + '__print(' + jsArgs + ');');
+      }
+      else if (trimmed.startsWith('loop ')) {
+        var lp = parseLoop(trimmed);
+        if (lp) {
+          var cnt = exprToJS(lp.count);
+          jsLines.push(pad + 'for (' + lp.varName + ' = 0; ' + lp.varName + ' < ' + cnt + '; ' + lp.varName + '++) {');
+          blockStack.push(indent);
+          if (lp.cond) {
+            var ci = indent + 2;
+            jsLines.push(' '.repeat(ci) + 'if (' + exprToJS(lp.cond) + ') {');
+            blockStack.push(ci);
+          }
+        }
+      }
+      else if (trimmed.startsWith('if ')) {
+        var cond = exprToJS(trimmed.slice(3));
+        jsLines.push(pad + 'if (' + cond + ') {');
+        blockStack.push(indent);
+      }
+      else {
+        // Assignment or expression
+        jsLines.push(pad + exprToJS(trimmed) + ';');
+      }
+    }
+  }
+
+  // Close remaining blocks
+  while (blockStack.length > 0) {
+    jsLines.push(' '.repeat(blockStack.pop()) + '}');
+  }
+
+  return jsLines.join('\n');
+}
+
+// ============================
+//  Execution
+// ============================
+var __output = [];
+function __print() {
+  var parts = [];
+  for (var i = 0; i < arguments.length; i++) parts.push(arguments[i]);
+  __output.push(parts.join(' '));
+}
+
+function executeCell(code5c) {
+  var jsCode = toJS(code5c);
+  __output = [];
+  try {
+    // Add loop safety counter
+    var safeCode = jsCode.replace(
+      /for\s*\(/g,
+      'var __lc=0; for ('
+    );
+    safeCode = safeCode.replace(
+      /\)\s*\{/g,
+      ') { if(++__lc>1000000)throw new Error("Loop limit exceeded (1,000,000 iterations)");'
+    );
+    eval(safeCode);
+    return { output: __output.join('\n'), error: null };
+  } catch (e) {
+    return { output: __output.join('\n'), error: e.message };
+  }
+}
+
+// ============================
+//  Cell Management
+// ============================
+var cellCounter = 0;
+var cellList = [];
+
+function addCell(code, skipFocus) {
+  cellCounter++;
+  var id = 'cell-' + cellCounter;
+  var num = cellList.length + 1;
+
+  var div = document.createElement('div');
+  div.className = 'cell';
+  div.id = id;
+  div.innerHTML =
+    '<div class="cell-bar">' +
+      '<span class="cell-num">[' + num + ']</span>' +
+      '<button class="btn-run-cell" onclick="runCell(\'' + id + '\')" title="Run">&#9654;</button>' +
+      '<button onclick="showPython(\'' + id + '\')" title="Show Python">&#x1f40d;</button>' +
+      '<span class="spacer"></span>' +
+      '<button onclick="moveCell(\'' + id + '\',-1)" title="Move up">&#9650;</button>' +
+      '<button onclick="moveCell(\'' + id + '\',1)" title="Move down">&#9660;</button>' +
+      '<button onclick="deleteCell(\'' + id + '\')" title="Delete cell">&#10005;</button>' +
+    '</div>' +
+    '<div class="cell-input">' +
+      '<textarea id="' + id + '-code" spellcheck="false" placeholder="Write 5C code here..."' +
+        ' oninput="autoResize(this)" onkeydown="handleTab(event, this)">' +
+        (code || '') +
+      '</textarea>' +
+    '</div>' +
+    '<div class="cell-python" id="' + id + '-python"><div class="py-label">Python</div><pre></pre></div>' +
+    '<div class="cell-output" id="' + id + '-output"></div>';
+
+  document.getElementById('cells').appendChild(div);
+  cellList.push(id);
+
+  var ta = document.getElementById(id + '-code');
+  autoResize(ta);
+  if (!skipFocus) ta.focus();
+}
+
+function deleteCell(id) {
+  if (cellList.length <= 1) return;
+  var el = document.getElementById(id);
+  if (el) el.remove();
+  cellList = cellList.filter(function(c) { return c !== id; });
+  renumberCells();
+}
+
+function moveCell(id, dir) {
+  var idx = cellList.indexOf(id);
+  var newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= cellList.length) return;
+  // Swap in array
+  var tmp = cellList[idx];
+  cellList[idx] = cellList[newIdx];
+  cellList[newIdx] = tmp;
+  // Swap in DOM
+  var container = document.getElementById('cells');
+  var elA = document.getElementById(cellList[idx]);
+  var elB = document.getElementById(cellList[newIdx]);
+  if (dir < 0) container.insertBefore(elB, elA);
+  else container.insertBefore(elA, elB);
+  renumberCells();
+}
+
+function renumberCells() {
+  for (var i = 0; i < cellList.length; i++) {
+    var cell = document.getElementById(cellList[i]);
+    if (cell) cell.querySelector('.cell-num').textContent = '[' + (i + 1) + ']';
+  }
+}
+
+function runCell(id) {
+  var ta = document.getElementById(id + '-code');
+  var outDiv = document.getElementById(id + '-output');
+  var code = ta.value;
+  if (!code.trim()) { outDiv.textContent = ''; outDiv.className = 'cell-output'; return; }
+  var result = executeCell(code);
+  if (result.error) {
+    outDiv.className = 'cell-output error';
+    outDiv.textContent = (result.output ? result.output + '\n' : '') + 'Error: ' + result.error;
+  } else {
+    outDiv.className = 'cell-output';
+    outDiv.textContent = result.output;
+  }
+}
+
+function runAll() {
+  for (var i = 0; i < cellList.length; i++) {
+    runCell(cellList[i]);
+  }
+}
+
+function showPython(id) {
+  var ta = document.getElementById(id + '-code');
+  var pyDiv = document.getElementById(id + '-python');
+  if (pyDiv.classList.contains('visible')) {
+    pyDiv.classList.remove('visible');
+    return;
+  }
+  var code = ta.value;
+  if (!code.trim()) { pyDiv.classList.remove('visible'); return; }
+  var py = toPython(code);
+  pyDiv.querySelector('pre').textContent = py;
+  pyDiv.classList.add('visible');
+}
+
+function toggleAllPython() {
+  var anyHidden = false;
+  for (var i = 0; i < cellList.length; i++) {
+    var pyDiv = document.getElementById(cellList[i] + '-python');
+    if (!pyDiv.classList.contains('visible')) { anyHidden = true; break; }
+  }
+  for (var i = 0; i < cellList.length; i++) {
+    var ta = document.getElementById(cellList[i] + '-code');
+    var pyDiv = document.getElementById(cellList[i] + '-python');
+    if (anyHidden) {
+      var code = ta.value;
+      if (code.trim()) {
+        pyDiv.querySelector('pre').textContent = toPython(code);
+        pyDiv.classList.add('visible');
+      }
+    } else {
+      pyDiv.classList.remove('visible');
+    }
+  }
+}
+
+function clearOutputs() {
+  for (var i = 0; i < cellList.length; i++) {
+    var outDiv = document.getElementById(cellList[i] + '-output');
+    outDiv.textContent = '';
+    outDiv.className = 'cell-output';
+    var pyDiv = document.getElementById(cellList[i] + '-python');
+    pyDiv.classList.remove('visible');
+  }
+}
+
+function autoResize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = Math.max(44, ta.scrollHeight) + 'px';
+}
+
+function handleTab(e, ta) {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    var start = ta.selectionStart;
+    var end = ta.selectionEnd;
+    ta.value = ta.value.substring(0, start) + '  ' + ta.value.substring(end);
+    ta.selectionStart = ta.selectionEnd = start + 2;
+  }
+  // Shift+Enter to run cell
+  if (e.key === 'Enter' && e.shiftKey) {
+    e.preventDefault();
+    var cellDiv = ta.closest('.cell');
+    if (cellDiv) runCell(cellDiv.id);
+  }
+}
+
+// ============================
+//  Sample Programs
+// ============================
+var samples = [
+  "# Hello World\nprint 'hello'\nprint 1\nprint 1+1",
+  "# Variables\nx = 1\ny = x + 2\nprint y",
+  "# Print multiple arguments\ni = 1\nj = 2\nprint 'hello' i j",
+  "# If / Else If / Else\nscore = 67\nif score > 80\n  print 'A'\nelse if score > 70\n  print 'B'\nelse if score > 60\n  print 'C'\nelse if score > 50\n  print 'D'\nelse\n  print 'F'",
+  "# Loop\nloop i 5\n  print i",
+  "# Loop Pattern: Map\nloop i 5\n  print (i+1) * 2",
+  "# Loop Pattern: Filter\nloop i 10\n  if i % 2 == 0\n    print i",
+  "# Loop Pattern: Reduce\nx = 0\nloop i 10\n  x = x + i\nprint x"
+];
+
+// Initialize with sample cells
+for (var i = 0; i < samples.length; i++) {
+  addCell(samples[i], true);
+}
+</script>
+</body>
+</html>

@@ -520,6 +520,28 @@ function handleTab(e, ta) {
     e.preventDefault();
     var cellDiv = ta.closest('.cell');
     if (cellDiv) runCell(cellDiv.id);
+    return;
+  }
+  // Enter: auto-indent (maintain current indent, add extra after block openers)
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    var pos = ta.selectionStart;
+    var text = ta.value;
+    // Find the current line
+    var lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    var currentLine = text.substring(lineStart, pos);
+    // Get current indentation
+    var indentMatch = currentLine.match(/^(\s*)/);
+    var indent = indentMatch ? indentMatch[1] : '';
+    // Check if line opens a block (if, else if, else, loop)
+    var trimmed = currentLine.trim();
+    if (/^(if\s|else\s*if\s|else$|loop\s)/.test(trimmed)) {
+      indent += '  ';
+    }
+    var insert = '\n' + indent;
+    ta.value = text.substring(0, pos) + insert + text.substring(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = pos + insert.length;
+    autoResize(ta);
   }
 }
 

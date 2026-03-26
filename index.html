@@ -347,7 +347,40 @@ function __print() {
   __output.push(parts.join(' '));
 }
 
+// Validate indentation: block openers must be followed by an indented line
+function validateIndent(code5c) {
+  var lines = preprocess(code5c).split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var trimmed = lines[i].trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    var isBlockOpener = /^(if\s|else\s*if\s|else$|loop\s)/.test(trimmed);
+    if (!isBlockOpener) continue;
+    // Find next non-empty line
+    var currentIndent = getIndent(lines[i]);
+    var found = false;
+    for (var j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue;
+      if (getIndent(lines[j]) <= currentIndent) {
+        var keyword = trimmed.match(/^(if|else if|else|loop)/)[0];
+        return 'Line ' + (i + 1) + ': "' + keyword + '" requires an indented block on the next line\n\n  ' + lines[i].trim() + '\n    ← indent the next line here';
+      }
+      found = true;
+      break;
+    }
+    if (!found) {
+      var keyword = trimmed.match(/^(if|else if|else|loop)/)[0];
+      return 'Line ' + (i + 1) + ': "' + keyword + '" requires an indented block on the next line';
+    }
+  }
+  return null;
+}
+
 function executeCell(code5c) {
+  // Validate indentation first
+  var indentError = validateIndent(code5c);
+  if (indentError) {
+    return { output: '', error: indentError };
+  }
   var jsCode = toJS(code5c);
   __output = [];
   try {
